@@ -92,8 +92,8 @@ func IsValidExternalTrackerURLFormat(uri string) bool {
 }
 
 var (
-	validUsernamePattern   = regexp.MustCompile(`^[\da-zA-Z][-.\w]*$`)
-	invalidUsernamePattern = regexp.MustCompile(`[-._]{2,}|[-._]$`) // No consecutive or trailing non-alphanumeric chars
+	validUsernamePattern   = regexp.MustCompile(`^[\da-zA-Z][-.\.@\w]*$`) // support email address as username
+	invalidUsernamePattern = regexp.MustCompile(`[-._]{2,}|[-._]$`)       // No consecutive or trailing non-alphanumeric chars
 )
 
 // IsValidUsername checks if username is valid
