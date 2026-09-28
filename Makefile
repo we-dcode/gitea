@@ -1007,9 +1007,18 @@ generate-manpage:
 	@gzip -9 man/man1/gitea.1 && echo man/man1/gitea.1.gz created
 	@#TODO A small script that formats config-cheat-sheet.en-us.md nicely for use as a config man page
 
+DOCKER_PLATFORMS ?= linux/amd64,linux/arm64
+
 .PHONY: docker
 docker:
-	docker build -t $(DOCKER_REF) -f Dockerfile.rootless .
+	docker build --build-arg GITEA_BUILD_VERSION=$(GITEA_VERSION) -t $(DOCKER_REF) -f Dockerfile.rootless .
+
+# amd64 + arm64 image, pushed straight to the registry (a multi-platform image
+# cannot be loaded into the local image store). Always use a new DOCKER_TAG:
+#   make docker-multiarch DOCKER_IMAGE=dcodetech/gitea DOCKER_TAG=v1.20-dcode.N
+.PHONY: docker-multiarch
+docker-multiarch:
+	docker buildx build --platform $(DOCKER_PLATFORMS) --build-arg GITEA_BUILD_VERSION=$(GITEA_VERSION) -t $(DOCKER_REF) -f Dockerfile.rootless --push .
 # support also build args docker build --build-arg GITEA_VERSION=v1.2.3 --build-arg TAGS="bindata sqlite sqlite_unlock_notify"  .
 
 # This endif closes the if at the top of the file

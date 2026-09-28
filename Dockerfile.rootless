@@ -1,5 +1,13 @@
+# Multi-arch build (linux/amd64 + linux/arm64) without an emulated toolchain.
+# The build stage always runs on the build host's own platform ($BUILDPLATFORM):
+# the frontend and the generated Go sources are platform-independent, and the
+# gitea binary is cross-compiled for $TARGETPLATFORM with tonistiigi/xx
+# (clang + a target musl sysroot; cgo is needed for sqlite). Only the small
+# runtime stage below runs as the target platform.
+FROM --platform=$BUILDPLATFORM docker.io/tonistiigi/xx:1.6.1 AS xx
+
 #Build stage
-FROM docker.io/library/golang:1.20-alpine3.18 AS build-env
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.20-alpine3.18 AS build-env
 
 ARG GOPROXY
 ENV GOPROXY ${GOPROXY:-direct}
@@ -10,18 +18,28 @@ ENV TAGS "bindata timetzdata $TAGS"
 ARG CGO_EXTRA_CFLAGS
 
 #Build deps
-RUN apk --no-cache add build-base git nodejs npm
+RUN apk --no-cache add build-base git nodejs npm clang lld
+COPY --from=xx / /
 
 #Setup repo
 COPY . ${GOPATH}/src/code.gitea.io/gitea
 WORKDIR ${GOPATH}/src/code.gitea.io/gitea
 
-#Checkout version if set
+#Checkout version if set, then build everything that does not depend on the
+#target platform (frontend assets + go generate / bindata) natively, once.
 RUN if [ -n "${GITEA_VERSION}" ]; then git checkout "${GITEA_VERSION}"; fi \
- && make clean-all build
+ && make clean-all frontend go-check generate-backend
 
-# Begin env-to-ini build
-RUN go build contrib/environment-to-ini/environment-to-ini.go
+#Cross-compile the backend and env-to-ini for the target platform
+ARG TARGETPLATFORM
+RUN xx-apk add --no-cache gcc musl-dev
+# Version string baked into the binary. By default the Makefile takes it from
+# `git describe`; pass it when the build context has no usable .git directory
+# (a git worktree, for example), e.g. GITEA_BUILD_VERSION=1.20.3+10-gabcdef012
+ARG GITEA_BUILD_VERSION
+RUN CGO_ENABLED=1 make GO=xx-go ${GITEA_BUILD_VERSION:+GITEA_VERSION=$GITEA_BUILD_VERSION} gitea \
+ && CGO_ENABLED=1 xx-go build contrib/environment-to-ini/environment-to-ini.go \
+ && xx-verify gitea environment-to-ini
 
 FROM docker.io/library/alpine:3.18
 LABEL maintainer="maintainers@gitea.io"
